@@ -28,7 +28,7 @@ class CPCommandResponseMsg extends CPMsg {
 
         // Build message without checksum
         StringBuilder sb = new StringBuilder();
-        sb.append(CP_HEADER).append(" ").append(CP_CMDRES_HEADER).append(" ");
+        sb.append(CP_CMDRES_HEADER).append(" ");
         sb.append(id).append(" ").append(success).append(" ").append(length);
         if (message != null && !message.isEmpty()) {
             sb.append(" ").append(message);
@@ -36,15 +36,15 @@ class CPCommandResponseMsg extends CPMsg {
 
         String msgWithoutChecksum = sb.toString();
 
-        // Exclude 'cp ' from checksum calculation
-        String checksumData = msgWithoutChecksum.substring(3); // Exclude 'cp '
-
         // Calculate checksum
-        this.checksum = calculateChecksum(checksumData);
+        this.checksum = calculateChecksum(msgWithoutChecksum);
 
         // Append checksum
         this.data = msgWithoutChecksum + " " + this.checksum;
         this.dataBytes = this.data.getBytes();
+
+        // Call the superclass method to add 'cp' header
+        super.create(this.data);
     }
 
     @Override
@@ -54,41 +54,42 @@ class CPCommandResponseMsg extends CPMsg {
         String checksumStr = sentence.substring(lastSpaceIndex + 1);
         String msgWithoutChecksum = sentence.substring(0, lastSpaceIndex);
 
-        String[] parts = msgWithoutChecksum.split("\\s+", 6); // Limit to 6 parts
+        // Recalculate the checksum and verify
+        long calculatedChecksum = calculateChecksum(msgWithoutChecksum);
+        try {
+            this.checksum = Long.parseLong(checksumStr);
+        } catch (NumberFormatException e) {
+            throw new IllegalMsgException();
+        }
+        if (this.checksum != calculatedChecksum) {
+            throw new IllegalMsgException();
+        }
+
+        String[] parts = msgWithoutChecksum.split("\\s+", 5);
 
         if (parts.length < 5)
             throw new IllegalMsgException();
 
-        if (!parts[0].equals(CP_HEADER) || !parts[1].equals(CP_CMDRES_HEADER))
+        if (!parts[0].equals(CP_CMDRES_HEADER))
             throw new IllegalMsgException();
 
         try {
-            this.id = Integer.parseInt(parts[2]);
-            this.success = parts[3];
-            this.length = Integer.parseInt(parts[4]);
-
-            // Extract message if present
-            if (length > 0) {
-                if (parts.length < 6)
-                    throw new IllegalMsgException();
-                this.message = parts[5];
-            } else {
-                this.message = null;
-            }
-
-            // Parse checksum
-            this.checksum = Long.parseLong(checksumStr);
-
-            // Recalculate the checksum and verify
-            String checksumData = msgWithoutChecksum.substring(3); // Exclude 'cp '
-            long calculatedChecksum = calculateChecksum(checksumData);
-
-            if (this.checksum != calculatedChecksum) {
-                throw new IllegalMsgException();
-            }
+            this.id = Integer.parseInt(parts[1]);
+            this.success = parts[2];
+            this.length = Integer.parseInt(parts[3]);
         } catch (NumberFormatException e) {
             throw new IllegalMsgException();
         }
+
+        // Extract message if present
+        if (length > 0) {
+            if (parts.length < 5)
+                throw new IllegalMsgException();
+            this.message = parts[4];
+        } else {
+            this.message = null;
+        }
+
         return this;
     }
 

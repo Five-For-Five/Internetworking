@@ -84,45 +84,32 @@ class CPCommandMsg extends CPMsg {
         }
 
         // Now parse the message
-        String[] initialParts = msgWithoutChecksum.split("\\s+", 5);
+        String[] initialParts = msgWithoutChecksum.split("\\s+", 4);
 
-        if (initialParts.length < 5)
+        if (initialParts.length < 4)
             throw new IllegalMsgException();
 
-        if (!initialParts[0].equals(CP_HEADER) || !initialParts[1].equals(CP_COMMAND_HEADER))
+        if (!initialParts[0].equals(CP_COMMAND_HEADER))
             throw new IllegalMsgException();
 
         try {
-            this.id = Integer.parseInt(initialParts[2]);
-            this.cookie = Integer.parseInt(initialParts[3]);
-            this.length = Integer.parseInt(initialParts[4]);
+            this.id = Integer.parseInt(initialParts[1]);
+            this.cookie = Integer.parseInt(initialParts[2]);
+            this.length = Integer.parseInt(initialParts[3]);
         } catch (NumberFormatException e) {
             throw new IllegalMsgException();
         }
 
         // Now, extract the command and message from the rest of the string
         // Find the index of the length field in the original message
-        int lengthFieldIndex = msgWithoutChecksum.indexOf(initialParts[4],
-                msgWithoutChecksum.indexOf(initialParts[3]) + initialParts[3].length());
+        int headerLength = initialParts[0].length() + initialParts[1].length() + initialParts[2].length() + initialParts[3].length() + 4; // +4 for spaces
+        String commandAndMessage = msgWithoutChecksum.substring(headerLength);
 
-        int commandStartIndex = lengthFieldIndex + initialParts[4].length();
-
-        // Skip the space after the length field
-        if (commandStartIndex < msgWithoutChecksum.length() && msgWithoutChecksum.charAt(commandStartIndex) == ' ')
-            commandStartIndex++;
-
-        if (commandStartIndex >= msgWithoutChecksum.length())
+        if (commandAndMessage.length() != length)
             throw new IllegalMsgException();
-
-        // The command and message field have a combined length of 'length' characters
-        if (commandStartIndex + this.length > msgWithoutChecksum.length())
-            throw new IllegalMsgException();
-
-        String commandAndMessage = msgWithoutChecksum.substring(commandStartIndex, commandStartIndex + this.length);
 
         // Now extract command and message
         String[] cmdParts = commandAndMessage.split("\\s+", 2);
-
         this.command = cmdParts[0];
 
         // Validate command

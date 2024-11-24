@@ -93,7 +93,51 @@ public class CPProtocol extends Protocol {
     public Msg receive() throws IOException, IWProtocolException {
         CPMsg cpmIn = null;
 
-        if (this.role == cp_role.COMMAND) {
+        if (this.role == cp_role.COOKIE) {
+            try {
+                // Wait indefinitely for a message
+                Msg receivedMsg = this.PhyProto.receive();
+
+                // Verify the message is a CP protocol message
+                if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
+                    return null;
+                }
+
+                // Parse the incoming message
+                try {
+                    cpmIn = (CPMsg) new CPMsg().parse(receivedMsg.getData());
+
+                    if (cpmIn instanceof CPCookieRequestMsg) {
+                        // Handle cookie request
+                        CPCookieRequestMsg cookieRequestMsg = (CPCookieRequestMsg) cpmIn;
+
+                        // Generate a cookie
+                        int cookieValue = rnd.nextInt(65536); // Generate a cookie between 0 and 65535
+                        long timeOfCreation = System.currentTimeMillis();
+
+                        // Store the cookie associated with the client
+                        PhyConfiguration clientConfig = (PhyConfiguration) receivedMsg.getConfiguration();
+                        Cookie cookie = new Cookie(timeOfCreation, cookieValue);
+                        cookieMap.put(clientConfig, cookie);
+
+                        // Create a CPCookieResponseMsg
+                        CPCookieResponseMsg responseMsg = new CPCookieResponseMsg(true);
+                        responseMsg.create(String.valueOf(cookie.getCookieValue()));
+
+                        // Send it back to the client
+                        this.PhyProto.send(new String(responseMsg.getDataBytes()), clientConfig);
+                    } else {
+                        // Unexpected message type, discard or handle accordingly
+                    }
+
+                } catch (IWProtocolException e) {
+                    return null;
+                }
+
+            } catch (SocketTimeoutException e) {
+                return null;
+            }
+        } else if (this.role == cp_role.COMMAND) {
             // Server-side receive implementation
             try {
                 // Wait indefinitely for a message

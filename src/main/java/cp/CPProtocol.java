@@ -87,17 +87,18 @@ public class CPProtocol extends Protocol {
         // 1c. Send the command to the command server
         // Use the PHY layer to send the message
         this.PhyProto.send(new String(cmdMsg.getDataBytes()), this.PhyConfigCommandServer);
+        System.out.println("Sending command message data");
     }
 
     @Override
     public Msg receive() throws IOException, IWProtocolException {
-        CPMsg cpmIn = null;
+        CPMsg cpmIn = new CPMsg();
 
         if (this.role == cp_role.COOKIE) {
             try {
                 // Wait indefinitely for a message
                 Msg receivedMsg = this.PhyProto.receive();
-
+                System.out.println("Receiving as Cookie Server");
                 // Verify the message is a CP protocol message
                 if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
                     return null;
@@ -129,7 +130,6 @@ public class CPProtocol extends Protocol {
                     } else {
                         // Unexpected message type, discard or handle accordingly
                     }
-
                 } catch (IWProtocolException e) {
                     return null;
                 }
@@ -142,6 +142,7 @@ public class CPProtocol extends Protocol {
             try {
                 // Wait indefinitely for a message
                 Msg receivedMsg = this.PhyProto.receive();
+                System.out.println("Receiving as Command Server");
 
                 // Verify the message is a CP protocol message
                 if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
@@ -199,6 +200,7 @@ public class CPProtocol extends Protocol {
             try {
                 // 2a. Wait for response with a 3-second timeout
                 Msg receivedMsg = this.PhyProto.receive(CP_TIMEOUT);
+                System.out.println("Receiving as Client Server");
 
                 // Verify the message is a CP protocol message
                 if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
@@ -274,6 +276,25 @@ public class CPProtocol extends Protocol {
          assert resMsg instanceof CPCookieResponseMsg;
          this.cookie = ((CPCookieResponseMsg)resMsg).getCookie();
     }
+
+    private void verifyCookie(String cookie, String client) throws IOException, IWProtocolException {
+        CPCookieVerificationMsg verMsg = new CPCookieVerificationMsg();
+        verMsg.create(cookie + " " + client);
+        this.PhyProto.send(new String(verMsg.getDataBytes()), this.PhyConfigCookieServer);
+
+        Msg resMsg = this.PhyProto.receive(CP_TIMEOUT);
+        if (resMsg instanceof CPCookieVerificationResponseMsg) {
+            CPCookieVerificationResponseMsg response = (CPCookieVerificationResponseMsg) resMsg;
+            if (!response.isSuccess()) {
+                throw new IOException();
+            }
+        } else {
+            throw new IOException();
+        }
+    }
+
+
+
 }
 
 class Cookie {

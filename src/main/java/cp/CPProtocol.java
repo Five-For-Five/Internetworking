@@ -25,7 +25,6 @@ public class CPProtocol extends Protocol {
 
     private static final int MAX_ID = 65535;
     private int lastMessageId = -1;
-
     private int generateMessageId() {
         if (lastMessageId >= MAX_ID) {
             lastMessageId = 0;
@@ -75,15 +74,16 @@ public class CPProtocol extends Protocol {
         // Task 1.2.1: complete send method
         // 1a. Check that a legal command is issued
         if (s == null || s.isEmpty()) {
-            throw new IllegalArgumentException("Command cannot be null or empty");
+            throw new IllegalMsgException();
         }
 
         int messageId = generateMessageId();
+        this.id = messageId;
         // 1b. Create a command message object
         CPCommandMsg cmdMsg = new CPCommandMsg(cookie, messageId);
         cmdMsg.create(s);
 
-        this.id = messageId;
+
         // 1c. Send the command to the command server
         // Use the PHY layer to send the message
         this.PhyProto.send(new String(cmdMsg.getDataBytes()), this.PhyConfigCommandServer);
@@ -92,155 +92,46 @@ public class CPProtocol extends Protocol {
 
     @Override
     public Msg receive() throws IOException, IWProtocolException {
-        CPMsg cpmIn = new CPMsg();
+        // Task 1.2.2: complete receive method
+        Msg receivedMsg = null;
 
-        if (this.role == cp_role.COOKIE) {
-            try {
-                // Wait indefinitely for a message
-                Msg receivedMsg = this.PhyProto.receive();
-                System.out.println("Receiving as Cookie Server");
-                // Verify the message is a CP protocol message
-                if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
-                    return null;
-                }
+        final int amountOfAttempts = 3;
+        int attempts = 0;
 
-                // Parse the incoming message
-                try {
-                    cpmIn = (CPMsg) new CPMsg().parse(receivedMsg.getData());
-
-                    if (cpmIn instanceof CPCookieRequestMsg) {
-                        // Handle cookie request
-                        CPCookieRequestMsg cookieRequestMsg = (CPCookieRequestMsg) cpmIn;
-
-                        // Generate a cookie
-                        int cookieValue = rnd.nextInt(65536); // Generate a cookie between 0 and 65535
-                        long timeOfCreation = System.currentTimeMillis();
-
-                        // Store the cookie associated with the client
-                        PhyConfiguration clientConfig = (PhyConfiguration) receivedMsg.getConfiguration();
-                        Cookie cookie = new Cookie(timeOfCreation, cookieValue);
-                        cookieMap.put(clientConfig, cookie);
-
-                        // Create a CPCookieResponseMsg
-                        CPCookieResponseMsg responseMsg = new CPCookieResponseMsg(true);
-                        responseMsg.create(String.valueOf(cookie.getCookieValue()));
-
-                        // Send it back to the client
-                        this.PhyProto.send(new String(responseMsg.getDataBytes()), clientConfig);
-                    } else {
-                        // Unexpected message type, discard or handle accordingly
-                    }
-                } catch (IWProtocolException e) {
-                    return null;
-                }
-
-            } catch (SocketTimeoutException e) {
-                return null;
-            }
-        } else if (this.role == cp_role.COMMAND) {
-            // Server-side receive implementation
-            try {
-                // Wait indefinitely for a message
-                Msg receivedMsg = this.PhyProto.receive();
-                System.out.println("Receiving as Command Server");
-
-                // Verify the message is a CP protocol message
-                if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
-                    return null;
-                }
-
-                // Parse the command message
-                try {
-                    cpmIn = (CPMsg) new CPMsg().parse(receivedMsg.getData());
-
-                    if (cpmIn instanceof CPCommandMsg) {
-                        CPCommandMsg commandMsg = (CPCommandMsg) cpmIn;
-
-                        // Extract fields
-                        String command = commandMsg.getCommand();
-                        String message = commandMsg.getMessage();
-                        int msgId = commandMsg.getId();
-                        int msgCookie = commandMsg.getCookie();
-
-                        // For simplicity, assume the cookie is valid
-                        // Process the message by changing it to uppercase
-                        String responseMessage = null;
-                        String responseStatus = "ok";
-
-                        if (command.equals("print")) {
-                            responseMessage = (message != null) ? message.toUpperCase() : null;
-                        } else if (command.equals("status")) {
-                            // Handle status command
-                            responseMessage = "{\"status\": \"Server is running\"}";
-                        } else {
-                            responseStatus = "error";
-                            responseMessage = "Unknown command";
-                        }
-
-                        // Create a CPCommandResponseMsg
-                        CPCommandResponseMsg responseMsg = new CPCommandResponseMsg(msgId, responseStatus, responseMessage);
-                        responseMsg.create(null);
-
-                        // Send it back to the client
-                        PhyConfiguration clientConfig = (PhyConfiguration) receivedMsg.getConfiguration();
-                        this.PhyProto.send(new String(responseMsg.getDataBytes()), clientConfig);
-                    }
-
-                } catch (IWProtocolException e) {
-                    // Silently discard if parsing fails
-                    return null;
-                }
-
-            } catch (SocketTimeoutException e) {
-                // Handle timeout
-                return null;
-            }
-        } else if (this.role == cp_role.CLIENT) {
-            // Client-side receive implementation
+        while (attempts < amountOfAttempts) {
             try {
                 // 2a. Wait for response with a 3-second timeout
-                Msg receivedMsg = this.PhyProto.receive(CP_TIMEOUT);
-                System.out.println("Receiving as Client Server");
+                receivedMsg = this.PhyProto.receive(CP_TIMEOUT);
 
                 // Verify the message is a CP protocol message
                 if (((PhyConfiguration) receivedMsg.getConfiguration()).getPid() != proto_id.CP) {
                     return null;
                 }
 
-                // 2b. Parse the message
-                try {
-                    cpmIn = (CPMsg) new CPMsg().parse(receivedMsg.getData());
+                //2b. Parse the message
+                Msg responseMsg = new CPCommandMsg(cookie, id);
+                responseMsg = ((CPCommandMsg) responseMsg).parse(receivedMsg.getData());
 
-                } catch (IWProtocolException e) {
-                    // Silently discard if parsing fails
-                    return null;
-                }
+                //2c. Check if the response matches the sent command message
+                String[] responseParts = responseMsg.getData().split("\\s+");
+                int receivedId = Integer.parseInt(responseParts[2]);
+                String successStatus = responseParts[3];
 
-                // 2c. Check if the response matches the sent command message
-                if (cpmIn instanceof CPCommandResponseMsg) {
-                    CPCommandResponseMsg responseMsg = (CPCommandResponseMsg) cpmIn;
-
-                    // Compare message IDs
-                    if (responseMsg.getId() != id) {
-                        return null;
+                if(this.id == receivedId){
+                    if(successStatus.equals("ok")){
+                        return responseMsg;
+                    } else if(successStatus.equals("error")){
+                        break;
                     }
-
-                    // 2d. Check if the command server accepted the command
-                    if (!responseMsg.getSuccess()) {
-                        //throw new IWProtocolException();
-                    }
-
-                    // 2e. Return to the client appropriately
-                    return responseMsg;
                 }
-
             } catch (SocketTimeoutException e) {
-                // Handle timeout
-                //throw new IWProtocolException("Timeout waiting for response from server");
+                attempts++; // increment attempt counter if timeout occurs
+            } catch (Exception e) {
+                attempts++; // increment attempt counter if exception occurs
             }
         }
 
-        return null;
+        throw new CookieTimeoutException();
     }
 
 
@@ -276,25 +167,6 @@ public class CPProtocol extends Protocol {
          assert resMsg instanceof CPCookieResponseMsg;
          this.cookie = ((CPCookieResponseMsg)resMsg).getCookie();
     }
-
-    private void verifyCookie(String cookie, String client) throws IOException, IWProtocolException {
-        CPCookieVerificationMsg verMsg = new CPCookieVerificationMsg();
-        verMsg.create(cookie + " " + client);
-        this.PhyProto.send(new String(verMsg.getDataBytes()), this.PhyConfigCookieServer);
-
-        Msg resMsg = this.PhyProto.receive(CP_TIMEOUT);
-        if (resMsg instanceof CPCookieVerificationResponseMsg) {
-            CPCookieVerificationResponseMsg response = (CPCookieVerificationResponseMsg) resMsg;
-            if (!response.isSuccess()) {
-                throw new IOException();
-            }
-        } else {
-            throw new IOException();
-        }
-    }
-
-
-
 }
 
 class Cookie {

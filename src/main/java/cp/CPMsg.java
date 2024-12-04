@@ -4,8 +4,6 @@ import core.Msg;
 import exceptions.IWProtocolException;
 import exceptions.IllegalMsgException;
 
-import java.util.zip.CRC32;
-import java.util.zip.Checksum;
 
 class CPMsg extends Msg {
     protected static final String CP_HEADER = "cp";
@@ -34,20 +32,17 @@ class CPMsg extends Msg {
             case CPCookieResponseMsg.CP_CRES_HEADER:
                 parsedMsg = new CPCookieResponseMsg();
                 break;
-            case CPCommandMsg.CP_COMMAND_HEADER:
-                parsedMsg = new CPCommandMsg();
-                break;
-            case CPCommandResponseMsg.CP_CMDRES_HEADER:
-                parsedMsg = new CPCommandResponseMsg();
-                break;
             default:
                 throw new IllegalMsgException();
         }
 
-        // Remove the 'cp ' prefix before parsing
-        String messageContent = sentence.substring(CP_HEADER.length() + 1);
-        parsedMsg.parse(messageContent);
+        parsedMsg = (CPMsg)parsedMsg.parse(parts[1]);
         return parsedMsg;
     }
 
+}
+
+enum CommandType {
+    STATUS,
+    PRINT
 }
